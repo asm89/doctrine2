@@ -6,6 +6,8 @@ namespace Doctrine\Tests;
 
 error_reporting(E_ALL | E_STRICT);
 
+ini_set('pdo_mysql.default_socket', '/var/run/mysqld/mysqld.sock');
+
 require_once __DIR__ . '/../../../lib/vendor/doctrine-common/lib/Doctrine/Common/ClassLoader.php';
 
 if (isset($GLOBALS['DOCTRINE_COMMON_PATH'])) {
