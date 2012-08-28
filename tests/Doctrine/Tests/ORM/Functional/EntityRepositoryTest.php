@@ -2,9 +2,10 @@
 
 namespace Doctrine\Tests\ORM\Functional;
 
-use Doctrine\Tests\Models\CMS\CmsUser;
 use Doctrine\Tests\Models\CMS\CmsAddress;
-use Doctrine\Tests\Models\CMS\CmsPhonenumber;
+use Doctrine\Tests\Models\CMS\CmsArticle;
+use Doctrine\Tests\Models\CMS\CmsGroup;
+use Doctrine\Tests\Models\CMS\CmsUser;
 use Doctrine\Common\Collections\Criteria;
 
 require_once __DIR__ . '/../../TestInit.php';
@@ -87,6 +88,53 @@ class EntityRepositoryTest extends \Doctrine\Tests\OrmFunctionalTestCase
         $this->_em->clear();
 
         return array($user->id, $address->id);
+    }
+
+    public function loadAssociatedToManyFixture()
+    {
+        $user1 = new CmsUser();
+        $user1->name = 'Roman';
+        $user1->username = 'romanb';
+        $user1->status = 'freak';
+
+        $user2 = new CmsUser;
+        $user2->name = 'Guilherme';
+        $user2->username = 'gblanco';
+        $user2->status = 'dev';
+
+        $group1 = new CmsGroup();
+        $group1->name = "admins1";
+        $user1->addGroup($group1);
+
+        $group2 = new CmsGroup();
+        $group2->name = "admins2";
+        $user1->addGroup($group2);
+        $user2->addGroup($group2);
+
+        $group3 = new CmsGroup();
+        $group3->name = "admins3";
+        $user2->addGroup($group3);
+
+        $article1 = new CmsArticle;
+        $article1->topic = "Doctrine 2";
+        $article1->text = "This is an introduction to Doctrine 2.";
+        $user1->addArticle($article1);
+
+        $article2 = new CmsArticle;
+        $article2->topic = "Symfony 2";
+        $article2->text = "This is an introduction to Symfony 2.";
+        $user2->addArticle($article2);
+
+        $this->_em->persist($user1);
+        $this->_em->persist($user2);
+        $this->_em->persist($group1);
+        $this->_em->persist($group2);
+        $this->_em->persist($article1);
+        $this->_em->persist($article2);
+        $this->_em->flush();
+        $this->_em->clear();
+
+        return array($group1->id, $user1->id);
     }
 
     public function buildUser($name, $username, $status, $address)
@@ -692,5 +740,113 @@ class EntityRepositoryTest extends \Doctrine\Tests\OrmFunctionalTestCase
 
         $this->assertEquals(4, count($users));
     }
-}
 
+    public function testMatchingCriteriaContainsComparison()
+    {
+        list($groupId) = $this->loadAssociatedToManyFixture();
+
+        $repository = $this->_em->getRepository('Doctrine\Tests\Models\CMS\CmsUser');
+        $users = $repository->matching(new Criteria(
+            Criteria::expr()->contains('groups', $groupId)
+        ));
+
+        $this->assertEquals(1, count($users));
+        $this->assertEquals(1, $users[0]->id);
+    }
+
+    public function testMatchingCriteriaContainsComparison2()
+    {
+        list(, $userId) = $this->loadAssociatedToManyFixture();
+
+        $repository = $this->_em->getRepository('Doctrine\Tests\Models\CMS\CmsGroup');
+        $groups = $repository->matching(new Criteria(
+            Criteria::expr()->contains('users', $userId)
+        ));
+
+        $this->assertEquals(2, count($groups));
+        $this->assertEquals(1, $groups[0]->id);
+        $this->assertEquals(2, $groups[1]->id);
+    }
+
+    public function testMatchingCriteriaContainsComparison3()
+    {
+        $this->markTestSkipped(' todo implement this "conversion" ');
+        list(, $userId) = $this->loadAssociatedToManyFixture();
+
+        $user = $this->_em->getReference('Doctrine\Tests\Models\CMS\CmsUser', $userId);
+
+        $repository = $this->_em->getRepository('Doctrine\Tests\Models\CMS\CmsGroup');
+        $groups = $repository->matching(new Criteria(
+            Criteria::expr()->contains('users', $user)
+        ));
+
+        $this->assertEquals(2, count($groups));
+    }
+
+    public function testMatchingCriteriaContainsComparison4()
+    {
+        list(, $userId) = $this->loadAssociatedToManyFixture();
+
+        $repository = $this->_em->getRepository('Doctrine\Tests\Models\CMS\CmsUser');
+        $users = $repository->matching(new Criteria(
+            Criteria::expr()->contains('articles', 1)
+        ));
+
+        $this->assertEquals(1, count($users));
+    }
+
+    public function testMatchingCriteriaNotContainsComparison()
+    {
+        list($groupId) = $this->loadAssociatedToManyFixture();
+
+        $repository = $this->_em->getRepository('Doctrine\Tests\Models\CMS\CmsUser');
+        $users = $repository->matching(new Criteria(
+            Criteria::expr()->notContains('groups', $groupId)
+        ));
+
+        $this->assertEquals(1, count($users));
+        $this->assertEquals(2, $users[0]->id);
+    }
+
+    public function testMatchingCriteriaNotContainsComparison2()
+    {
+        list(, $userId) = $this->loadAssociatedToManyFixture();
+
+        $repository = $this->_em->getRepository('Doctrine\Tests\Models\CMS\CmsGroup');
+        $groups = $repository->matching(new Criteria(
+            Criteria::expr()->notContains('users', $userId)
+        ));
+
+        $this->assertEquals(1, count($groups));
+        $this->assertEquals(3, $groups[0]->id);
+    }
+
+    public function testMatchingCriteriaNotContainsComparison3()
+    {
+        $this->markTestSkipped(' todo implement this "conversion" ');
+        list(, $userId) = $this->loadAssociatedToManyFixture();
+
+        $user = $this->_em->getReference('Doctrine\Tests\Models\CMS\CmsUser', $userId);
+
+        $repository = $this->_em->getRepository('Doctrine\Tests\Models\CMS\CmsGroup');
+        $groups = $repository->matching(new Criteria(
+            Criteria::expr()->notContains('users', $user)
+        ));
+
+        $this->assertEquals(1, count($groups));
+        $this->assertEquals(3, $groups[0]->id);
+    }
+
+    public function testMatchingCriteriaNotContainsComparison4()
+    {
+        list(, $userId) = $this->loadAssociatedToManyFixture();
+
+        $repository = $this->_em->getRepository('Doctrine\Tests\Models\CMS\CmsUser');
+        $users = $repository->matching(new Criteria(
+            Criteria::expr()->notContains('articles', 1)
+        ));
+
+        $this->assertEquals(1, count($users));
+        $this->assertEquals(2, $users[0]->id);
+    }
+}

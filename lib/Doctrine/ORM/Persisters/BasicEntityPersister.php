@@ -1435,6 +1435,10 @@ class BasicEntityPersister
      */
     public function getSelectConditionStatementSQL($field, $value, $assoc = null, $comparison = null)
     {
+        if ($comparison === Comparison::CONTAINS || $comparison === Comparison::NOT_CONTAINS) {
+            return $this->getSelectContainsConditionSQL($field, $value, $comparison);
+        }
+
         $conditionSql = $this->getSelectConditionStatementColumnSQL($field, $assoc);
         $placeholder  = '?';
 
@@ -1447,6 +1451,76 @@ class BasicEntityPersister
             ? ((is_array($value)) ? ' IN (?)' : (($value === null) ? ' IS NULL' : ' = ' . $placeholder))
             : ' ' . sprintf(self::$comparisonMap[$comparison], $placeholder);
 
+
+        return $conditionSql;
+    }
+
+    public function getSelectContainsConditionSQL($field, $value, $comparison)
+    {
+        if (!isset($this->_class->associationMappings[$field])) {
+            throw new \Exception("Field '%s is not an association.");
+        }
+
+        $mapping = $this->_class->associationMappings[$field];
+
+        if ( ! ($mapping['type'] & ClassMetadata::TO_MANY)) {
+            throw new \Exception("Contains only works for *ToMany associations.");
+        }
+
+        $conditionSql = $comparison === Comparison::NOT_CONTAINS
+            ? ' NOT EXISTS (SELECT 1 FROM '
+            : ' EXISTS (SELECT 1 FROM ';
+
+        if ( $mapping['type'] === ClassMetadata::MANY_TO_MANY ) {
+            $sourceTableAlias   = $this->_getSQLTableAlias($this->_class->name);
+
+            $owningAssoc = ($mapping['isOwningSide'])
+                ? $mapping
+                : $this->_em->getClassMetadata($mapping['targetEntity'])->associationMappings[$mapping['mappedBy']];
+
+            $joinTableName  = $this->quoteStrategy->getJoinTableName($owningAssoc, $this->_class, $this->_platform);
+            $conditionSql .= $joinTableName;
+
+            $joinColumns    = (!$mapping['isOwningSide'])
+                ? $owningAssoc['joinTable']['inverseJoinColumns']
+                : $owningAssoc['joinTable']['joinColumns'];
+
+            foreach ($joinColumns as $joinColumn) {
+                $quotedSourceColumn = $this->quoteStrategy->getJoinColumnName($joinColumn, $this->_class, $this->_platform);
+                $quotedTargetColumn = $this->quoteStrategy->getReferencedJoinColumnName($joinColumn, $this->_class, $this->_platform);
+                $conditions[]       = $joinTableName . '.' . $quotedSourceColumn . ' = ' .  $sourceTableAlias . '.' . $quotedTargetColumn;
+            }
+
+            $joinColumn    = ($mapping['isOwningSide'])
+                ? $owningAssoc['joinTable']['inverseJoinColumns'][0]
+                : $owningAssoc['joinTable']['joinColumns'][0];
+
+            $quotedSourceColumn = $this->quoteStrategy->getJoinColumnName($joinColumn, $this->_class, $this->_platform);
+            $quotedTargetColumn = $this->quoteStrategy->getReferencedJoinColumnName($joinColumn, $this->_class, $this->_platform);
+            $conditions[]       = $joinTableName . '.' . $quotedSourceColumn . ' = ?';
+
+            $conditionSql .= ' WHERE ' . implode(' AND ', $conditions);
+        } else {
+            if ( $mapping['isOwningSide'] ) {
+                throw new \Exception('Only the non owning side of a OneToMany association can match (not) contains.');
+            }
+            $targetClass = $this->_em->getClassMetadata($mapping['targetEntity']);
+            $mapping = $targetClass->associationMappings[$mapping['mappedBy']];
+
+            $sourceTableAlias  = $this->_getSQLTableAlias($this->_class->name);
+            $targetTable = $targetClass->table['name'];
+
+            foreach ($mapping['targetToSourceKeyColumns'] as $targetColumn => $sourceColumn) {
+                $targetColumn = $this->quoteStrategy->getColumnName($this->_class->fieldNames[$targetColumn], $this->_class, $this->_platform);
+                $conditions[] = $sourceTableAlias . '.' . $targetColumn . ' = ' . $targetTable . '.' . $sourceColumn;
+            }
+
+            $conditions[] = $targetTable . '.' . $targetClass->identifier[0] . ' = ?';
+
+            $conditionSql .= $targetTable . ' WHERE ' . implode(' AND ', $conditions);
+        }
+
+        $conditionSql .= ')';
 
         return $conditionSql;
     }
